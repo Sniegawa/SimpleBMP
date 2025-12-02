@@ -1,12 +1,14 @@
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 
 typedef struct BMPHEADER
 {
-  char Signature[2];
-  int FileSize;
-  int reserved;
-  int DataOffset;
+  uint8_t Signature[2];
+  uint8_t FileSize[4];
+  uint8_t reserved[4];
+  uint8_t DataOffset[4];
 }BMPHEADER;
 
 typedef struct BMP_INFOHEADER
@@ -26,11 +28,18 @@ typedef struct BMP_INFOHEADER
 
 typedef struct BGRA
 {
-  char Blue;
-  char Green;
-  char Red;
-  char Aplha; // Padding
+  unsigned char Blue;
+  unsigned char Green;
+  unsigned char Red;
+ // char Aplha; // Padding
 } BGRA;
+
+uint32_t read_u32_from_arr(const uint8_t b[4])
+{
+  uint32_t v;
+  memcpy(&v, b, 4);
+  return v;
+}
 
 int main(int argc, char** argv)
 {
@@ -74,16 +83,17 @@ int main(int argc, char** argv)
       NumColors = 16 * 1024; break;
   }
   
-  BGRA color1;
+  BGRA colors[4];
   
-  printf("%x\n",header.DataOffset);
+  printf("%"PRIu32"\n",read_u32_from_arr(header.DataOffset));
 
-  fseek(fptr,header.DataOffset,SEEK_SET);
+  fseek(fptr,read_u32_from_arr(header.DataOffset),SEEK_SET);
+  
   
 
-  fread(&color1,sizeof(char),sizeof(BGRA),fptr);
+  fread(&colors,sizeof(char),sizeof(BGRA)*4,fptr);
 
-  printf("%d %d %d %d\n",color1.Red,color1.Green,color1.Blue,color1.Aplha);
+  printf("%d %d %d \n",colors[0].Red,colors[1].Red,colors[3].Red);
 
   return 0;
 }
