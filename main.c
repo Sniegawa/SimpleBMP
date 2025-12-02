@@ -1,6 +1,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct BMPHEADER
@@ -50,25 +51,25 @@ int main(int argc, char** argv)
 
   size_t bytesRead = fread(&header, sizeof(char),sizeof(BMPHEADER),fptr);
 
-  printf("%d vs %d\n",(int)sizeof(BMPHEADER),(int)bytesRead);
+  printf("sizeof BMP_HEADER  %d vs sizeof %d\n",(int)sizeof(BMPHEADER),(int)bytesRead);
   
-  printf("%c%c\n",header.Signature[0],header.Signature[1]);
+  printf("Header signature : %c%c\n",header.Signature[0],header.Signature[1]);
 
   BMP_INFOHEADER infoHeader;
 
   fseek(fptr, sizeof(BMPHEADER), SEEK_SET);
   size_t infoRead = fread(&infoHeader,sizeof(char),sizeof(BMP_INFOHEADER),fptr);
 
-  printf("%d vs %d vs %d\n",(int)sizeof(BMP_INFOHEADER),(int)infoRead,infoHeader.Size);
+  printf("sizeof BMP_INFOHEADER %d vs Bytes read %d vs size in read data%d\n",(int)sizeof(BMP_INFOHEADER),(int)infoRead,infoHeader.Size);
 
-  printf("%d %d\n",infoHeader.Width,infoHeader.Height);
+  printf("Read width %d : Read height %d\n",infoHeader.Width,infoHeader.Height);
   
   printf("Compression type = %d\n",infoHeader.Compression);
   if(infoHeader.Compression == 0) infoHeader.ImageSize = 0;
   printf("Bits per Pixel %d\n",infoHeader.BPP);
 
-  long int NumColors;
-
+  /*long int NumColors;
+  
   switch (infoHeader.BPP) 
   {
     case 1:
@@ -81,19 +82,26 @@ int main(int argc, char** argv)
       NumColors = 65536; break;
     case 24:
       NumColors = 16 * 1024; break;
-  }
+  }*/
   
-  BGRA colors[4];
+  if (infoHeader.BPP != 24) return -1; // No support for other types of color storage
   
-  printf("%"PRIu32"\n",read_u32_from_arr(header.DataOffset));
+  int DataSize = ((int)infoHeader.BPP/8) * infoHeader.Width * infoHeader.Height;
+  int DataOffset = *(int*)header.DataOffset;
 
-  fseek(fptr,read_u32_from_arr(header.DataOffset),SEEK_SET);
-  
-  
+  BGRA* ColorData = (BGRA*)malloc(DataSize);
 
-  fread(&colors,sizeof(char),sizeof(BGRA)*4,fptr);
+  printf("DataSize : %d\nDataOffset %d\n",DataSize,DataOffset);
 
-  printf("%d %d %d \n",colors[0].Red,colors[1].Red,colors[3].Red);
+  fseek(fptr,DataOffset,SEEK_SET);
+  
+  size_t colorsRead = fread(ColorData,sizeof(char),(size_t)DataSize,fptr);
+
+  printf("%d vs %u\n",(int)colorsRead,DataSize);
+  BGRA color1 = ColorData[10];
+  BGRA color2 = ColorData[500];
+  printf("Color at idx 0 %d %d %d\n",color1.Red,color1.Green,color1.Blue);
+  printf("Color at idx 150*150 %d %d %d\n",ColorData[150*150].Red,ColorData[150*150].Green,ColorData[150*150].Blue);
 
   return 0;
 }
