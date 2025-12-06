@@ -1,3 +1,15 @@
+/*
+	Œniegawa - 2025
+
+	To use this library you simply have to paste this:
+
+	#define BMP_IMPLEMENTATION
+	#include "SimpleBMP.h"
+
+	Library as of today only supports 24-Bit maps.
+
+*/
+
 #ifndef BMP_H
 #define BMP_H
 
@@ -13,7 +25,8 @@ BMP_IMAGE* BMP_LOAD(const char* path);
 
 void BMP_FREE(BMP_IMAGE* img);
 
-//#define BMP_IMPLEMENTATION // DELETEEEEEEEEE
+void BMP_WRITE(BMP_IMAGE* img, const char* path);
+
 #ifdef BMP_IMPLEMENTATION
 
 #include <inttypes.h>
@@ -21,6 +34,9 @@ void BMP_FREE(BMP_IMAGE* img);
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define HEADER_SIZE 14
+#define INFOHEADER_SIZE 40
 
 typedef struct BMP_DATA
 {
@@ -69,7 +85,11 @@ BMP_IMAGE* BMP_LOAD(const char* path)
 	FILE* fptr;
 	fptr = fopen(path, "rb");
 
-	if (!fptr) return NULL;
+	if (!fptr)
+	{
+		printf("BMP : Error opening file %s for reading\n", path);
+		return NULL;
+	}
 
 	fseek(fptr, 0, SEEK_END); // Go to end of file
 	size_t size = ftell(fptr); // Get file size by retrieving the FILE's current cursor position
@@ -153,6 +173,89 @@ void BMP_FREE(BMP_IMAGE*img)
 	free(img->pixels);
 	free(img);
 }
+
+void BMP_WRITE(BMP_IMAGE* img, const char* path)
+{
+	FILE* fptr = fopen(path, "wb");
+
+	if(!fptr)
+	{
+		printf("BMP : Error opening file %s for writing\n", path);
+		fclose(fptr);
+		return;
+	}
+
+	const unsigned char* Signature = "BM";
+	fwrite(Signature, 1, 2, fptr);
+
+
+	int width = img->width;
+	int height = img->height;
+
+	int rowSize = ((width * 3 + 3) / 4) * 4;
+
+	unsigned int FileSize = rowSize * height + HEADER_SIZE + INFOHEADER_SIZE;
+
+	fwrite(&FileSize, 4, 1, fptr);
+	
+	for (int i = 0; i < 4; ++i)
+		putc(0, fptr);
+
+	int DataOffset = HEADER_SIZE + INFOHEADER_SIZE;
+	fwrite(&DataOffset, 4, 1, fptr);
+
+	//INFO HEADER
+
+	int ihSize = INFOHEADER_SIZE;
+	fwrite(&ihSize, 4, 1, fptr);
+
+	fwrite(&img->width, 4, 1, fptr);
+	fwrite(&img->height, 4, 1, fptr);
+
+	short int Planes = 1;
+
+	fwrite(&Planes, 2, 1, fptr);
+
+	short int BitCount = 24; // FOR NOW ONLY SUPPORT FOR 24 BIT
+	fwrite(&BitCount, 2, 1, fptr);
+
+	int Compression = 0;
+	fwrite(&Compression, 4, 1, fptr);
+
+	unsigned int zeros[5] = { 0,0,0,0,0 };
+	fwrite(zeros, 4, 5, fptr);
+
+	unsigned char* bgrPixels = (unsigned char*)malloc(width * height * 3);
+
+	for(size_t i = 0; i < width*height; ++i)
+	{
+		bgrPixels[i * 3 + 0] = img->pixels[i * 3 + 2];
+		bgrPixels[i * 3 + 1] = img->pixels[i * 3 + 1];
+		bgrPixels[i * 3 + 2] = img->pixels[i * 3 + 0];
+	}
+
+	int padding = rowSize - width*3;
+
+	unsigned char pad[3] = { 0,0,0 };
+	for(int y = height-1; y >= 0; y--)
+	{
+		for(int x = 0; x < width; x++)
+		{
+			unsigned char r = bgrPixels[(y * width + x) * 3 + 0];
+			unsigned char g = bgrPixels[(y * width + x) * 3 + 1];
+			unsigned char b = bgrPixels[(y * width + x) * 3 + 2];
+			unsigned char pixel[3] = { r,g,b };
+			fwrite(pixel, 1, 3, fptr);
+		}
+
+		if (padding > 0) fwrite(pad, 1, padding, fptr);
+
+	}
+
+	fclose(fptr);
+}
+
+
 #endif //BMP_IMPLEMENTATION
 #endif //BMP_H
 
