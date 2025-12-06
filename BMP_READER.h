@@ -1,19 +1,19 @@
 #ifndef BMP_H
 #define BMP_H
 
-typedef struct bmp_image
+typedef struct BMP_IMAGE
 {
   unsigned int width;
   unsigned int height;
   unsigned char* pixels; //RGB
-}bmp_image;
+}BMP_IMAGE;
 
 
-bmp_image* bmp_load(const char* path);
+BMP_IMAGE* BMP_LOAD(const char* path);
 
-void bmp_free(bmp_image* img);
+void BMP_FREE(BMP_IMAGE* img);
 
-#define BMP_IMPLEMENTATION // DELETEEEEEEEEE
+//#define BMP_IMPLEMENTATION // DELETEEEEEEEEE
 #ifdef BMP_IMPLEMENTATION
 
 #include <inttypes.h>
@@ -22,126 +22,136 @@ void bmp_free(bmp_image* img);
 #include <stdlib.h>
 #include <string.h>
 
-#define BMPHEADER_SIZE 14
-
-typedef struct BMPHEADER
+typedef struct BMP_DATA
 {
-  uint8_t Signature[2];
-  uint8_t FileSize[4];
-  uint8_t reserved[4];
-  uint8_t DataOffset[4];
-}BMPHEADER;
+	const unsigned char* data;
+	size_t size;
+	size_t pos;
+}BMP_DATA;
 
-typedef struct BMP_INFOHEADER
+static void BMP_SKIP_BYTES(BMP_DATA* d, int n)
 {
-  int Size;
-  int Width;
-  int Height;
-  char Planes[2];
-  short int BPP;
-  int Compression;
-  int ImageSize; //Compressed size if Compression = 0 it should be = 0
-  int XpixelsPerM;
-  int YpixelsPerM;
-  int ColorsUsed;
-  int ImportantColors;
-}BMP_INFOHEADER;
-
-
-bmp_image* bmp_load(const char* path)
-{
-  bmp_image* img = (bmp_image*)malloc(sizeof(bmp_image));
-  
-  FILE* fptr;
-  fptr = fopen(path,"rb");
-
-  BMPHEADER header;
-
-  size_t bytesRead = fread(&header, 1,BMPHEADER_SIZE,fptr);
-  
-  if(bytesRead != BMPHEADER_SIZE)
-  {
-    printf("Error reading file %s\nIncorrect header size\n",path);
-    return NULL;
-  }
-
-  if(header.Signature[0] != 'B' || header.Signature[1] != 'M')
-  {
-    printf("Error reading file %s\nIncorrect header signature\n",path);
-    return NULL;
-  }
-
-  BMP_INFOHEADER infoHeader;
-
-  fseek(fptr,BMPHEADER_SIZE,SEEK_SET);
-
-  bytesRead = fread(&infoHeader,1,sizeof(BMP_INFOHEADER),fptr);
-
-  if(bytesRead != sizeof(BMP_INFOHEADER) || bytesRead != infoHeader.Size || infoHeader.Size != sizeof(BMP_INFOHEADER))
-  {
-    printf("Error reading file %s\nIncorrect info header size\n",path);
-    return NULL;
-  }
-
-  img->width = infoHeader.Width;
-  img->height = infoHeader.Height;
-
-  int height = infoHeader.Height;
-  int width = infoHeader.Width;
-  
-  if(infoHeader.Compression == 0) infoHeader.ImageSize = 0;
-
-  if(infoHeader.BPP != 24)
-  {
-    printf("Error reading file %s\nUnsuported BPP value\n",path);
-    return NULL;
-  }
-
-  int BytesPerPixel = (int)infoHeader.BPP/8;
-  int RowBytes = width * BytesPerPixel;
-  int PaddedRow = (RowBytes + 3) & ~3; // This should round up the value to multiple of 4
-  int Padding = PaddedRow - RowBytes; 
-
-  int DataSize = BytesPerPixel * width * height;
-  int DataOffset = *(int*)header.DataOffset; // !!!!!! REFACTOR !!!!!!
-
-  img->pixels = (unsigned char*)malloc(width * height * 3);
-
-  unsigned char* row_buf = (unsigned char*)malloc(PaddedRow);
-
-  fseek(fptr,DataOffset,SEEK_SET);
-
-  for(unsigned int y = 0; y < height; ++y)
-  {
-    fread(row_buf,1,PaddedRow,fptr);
-    
-    int destination_y = height - 1 - y;
-    unsigned char* dst_row = &img->pixels[destination_y * width * 3];
-
-    for(unsigned int x = 0; x < width; ++x)
-    {
-      unsigned char b = row_buf[x * 3 + 0];
-      unsigned char g = row_buf[x * 3 + 1];
-      unsigned char r = row_buf[x * 3 + 2];
-
-     dst_row[x * 3 + 0] = r;
-     dst_row[x * 3 + 1] = g;
-     dst_row[x * 3 + 2] = b;
-    }
-
-  }
-
-  fclose(fptr);
-
-  return img;
+	if (d->pos + n > d->size)
+		n = d->size - d->pos;
+	d->pos += n;
 }
 
-void bmp_free(bmp_image *img)
+static unsigned char BMP_GET8(BMP_DATA* d)
 {
-  if(!img) return;
+	if (d->pos > d->size) return 0;
+	return d->data[d->pos++]; // Get data at current pos and advance further
+}
 
-  free(img->pixels);
-  free(img);
+//Little endian
+static uint32_t BMP_GET32(BMP_DATA* d)
+{
+	uint32_t v = 0;
+	v |= BMP_GET8(d);
+	v |= BMP_GET8(d) << 8; // Get next byte and shift it to the right by one byte (It retrieves value as uint8_t but it's promoted to uint32_t value on operations so it doesn't oferflow)
+	v |= BMP_GET8(d) << 16;
+	v |= BMP_GET8(d) << 24;
+	return v;
+}
+
+//Little endian
+static uint16_t BMP_GET16(BMP_DATA* d)
+{
+	uint16_t v = 0;
+	v |= BMP_GET8(d);
+	v |= BMP_GET8(d) << 8;
+	return v;
+}
+
+BMP_IMAGE* BMP_LOAD(const char* path)
+{
+	BMP_IMAGE* img = (BMP_IMAGE*)malloc(sizeof(BMP_IMAGE));
+
+	FILE* fptr;
+	fptr = fopen(path, "rb");
+
+	if (!fptr) return NULL;
+
+	fseek(fptr, 0, SEEK_END); // Go to end of file
+	size_t size = ftell(fptr); // Get file size by retrieving the FILE's current cursor position
+	fseek(fptr, 0, SEEK_SET); // Return back to the beggining to file
+
+	unsigned char* fileData = malloc(size);
+	fread(fileData, 1, size, fptr);
+	fclose(fptr);
+
+	BMP_DATA d = { fileData, size, 0 };
+
+	if(BMP_GET8(&d) != 'B' || BMP_GET8(&d) != 'M')
+	{
+		free(fileData);
+		printf("BMP : Corrupted header data\n");
+		return NULL;
+	}
+
+	BMP_SKIP_BYTES(&d, 8); // Skipping File size, since we have it and reserved data space
+
+	uint32_t PixelDataOffset = BMP_GET32(&d);
+
+	uint32_t header_size = BMP_GET32(&d);
+
+	int width = (int)BMP_GET32(&d);
+	int height = (int)BMP_GET32(&d);
+
+	img->width = width;
+	img->height = height;
+
+	BMP_SKIP_BYTES(&d, 2); // Planes
+
+	uint16_t bpp = BMP_GET16(&d); // Bits per pixel
+
+	if(bpp != 24)
+	{
+		free(fileData);
+		printf("BMP : unsuported BMP bit format (only 24-bit supported)\n");
+		return NULL;
+	}
+
+	BMP_SKIP_BYTES(&d, 24); // Skip rest of info header
+
+	//----------READING DATA-------------\\
+
+	img->pixels = (unsigned char*)malloc((size_t)width * height * 3);
+
+	d.pos = PixelDataOffset;
+
+	int row_bytes = width * 3;
+	int pad = (4 - (row_bytes & 3)) & 3;
+
+	for (int y = 0; y < height; ++y)
+	{
+		size_t row = height - 1 - y; // Flip
+		size_t z = (size_t)row * (size_t)width * 3;
+
+		for (int x = 0; x < width; ++x)
+		{
+			unsigned char b = BMP_GET8(&d);
+			unsigned char g = BMP_GET8(&d);
+			unsigned char r = BMP_GET8(&d);
+			
+			img->pixels[z++] = r;
+			img->pixels[z++] = g;
+			img->pixels[z++] = b;
+		}
+
+		BMP_SKIP_BYTES(&d, pad);
+
+	}
+	free(fileData);
+
+	return img;
+}
+
+void BMP_FREE(BMP_IMAGE*img)
+{
+	if(!img) return;
+
+	free(img->pixels);
+	free(img);
 }
 #endif //BMP_IMPLEMENTATION
 #endif //BMP_H
